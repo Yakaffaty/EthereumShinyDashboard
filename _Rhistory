@@ -1,0 +1,512 @@
+select address, date, sum(balance_increment) over (partition by address order by date) as balance,
+lead(date, 1, current_date()) over (partition by address order by date) as next_date
+from double_entry_book_grouped_by_date
+),
+calendar AS (
+select date from unnest(generate_date_array('2018-08-01', current_date())) as date
+),
+daily_balances as (
+select address, calendar.date, balance
+from daily_balances_with_gaps
+join calendar on daily_balances_with_gaps.date <= calendar.date and calendar.date < daily_balances_with_gaps.next_date
+)
+select date, count(*) as address_count
+from daily_balances
+where balance > 0
+group by date
+ORDER BY date"
+#hashRate <- query_exec(queryHash, projectid, use_legacy_sql = FALSE)
+activeAccounts <- query_exec(queryActive, projectid, use_legacy_sql = FALSE)
+View(activeAccounts)
+total <- merge(activeAccounts,hashRate,by=c("date","block_day"))
+activeHash <- merge(hashRate, activeAccounts, by.x = "block_day", by.y = "date"))
+activeHash <- merge(hashRate, activeAccounts, by.x = "block_day", by.y = "date")
+View(activeHash)
+miners_gini <- query_exec(query_gini, projectid, use_legacy_sql = FALSE)
+query_gini = "
+with
+double_entry_book as (
+-- debits
+select to_address as address, value as value, block_timestamp
+from `bigquery-public-data.crypto_ethereum.traces`
+where to_address is not null
+and status = 1
+and (call_type not in ('delegatecall', 'callcode', 'staticcall') or call_type is null)
+union all
+-- credits
+select from_address as address, -value as value, block_timestamp
+from `bigquery-public-data.crypto_ethereum.traces`
+where from_address is not null
+and status = 1
+and (call_type not in ('delegatecall', 'callcode', 'staticcall') or call_type is null)
+union all
+-- transaction fees debits
+select miner as address, sum(cast(receipt_gas_used as numeric) * cast(gas_price as numeric)) as value, block_timestamp
+from `bigquery-public-data.crypto_ethereum.transactions` as transactions
+join `bigquery-public-data.crypto_ethereum.blocks` as blocks on blocks.number = transactions.block_number
+group by blocks.miner, block_timestamp
+union all
+-- transaction fees credits
+select from_address as address, -(cast(receipt_gas_used as numeric) * cast(gas_price as numeric)) as value, block_timestamp
+from `bigquery-public-data.crypto_ethereum.transactions`
+),
+double_entry_book_by_date as (
+select
+date(block_timestamp) as date,
+address,
+sum(value / POWER(10,0)) as value
+from double_entry_book
+group by address, date
+),
+daily_balances_with_gaps as (
+select
+address,
+date,
+sum(value) over (partition by address order by date) as balance,
+lead(date, 1, current_date()) over (partition by address order by date) as next_date
+from double_entry_book_by_date
+),
+calendar as (
+select date from unnest(generate_date_array('2015-07-30', current_date())) as date
+),
+daily_balances as (
+select address, calendar.date, balance
+from daily_balances_with_gaps
+join calendar on daily_balances_with_gaps.date <= calendar.date and calendar.date < daily_balances_with_gaps.next_date
+),
+supply as (
+select
+date,
+sum(balance) as daily_supply
+from daily_balances
+group by date
+),
+ranked_daily_balances as (
+select
+daily_balances.date,
+balance,
+row_number() over (partition by daily_balances.date order by balance desc) as rank
+from daily_balances
+join supply on daily_balances.date = supply.date
+where safe_divide(balance, daily_supply) >= 0.0001
+ORDER BY safe_divide(balance, daily_supply) DESC
+),
+gini_daily as (
+select
+date,
+-- (1 − 2B) https://en.wikipedia.org/wiki/Gini_coefficient
+1 - 2 * sum((balance * (rank - 1) + balance / 2)) / count(*) / sum(balance) as gini
+from ranked_daily_balances
+group by date
+)
+select date,
+gini,
+avg(gini) over (order by date asc rows 7 preceding) as gini_sma7,
+avg(gini) over (order by date asc rows 30 preceding) as gini_sma30
+from gini_daily
+order by date asc"
+miners_gini <- query_exec(query_gini, projectid, use_legacy_sql = FALSE)
+View(miners_gini)
+View(activeHash)
+activeHash %>%
+hchart('area', hcaes(x = 'block_day', y = 'n', group = c("hashrate", "address_count")))
+activeHash %>%
+count(hashrate, address_count) %>%
+hchart('area', hcaes(x = 'block_day', y = 'n', group = c("hashrate", "address_count")))
+activeHash %>%
+count(block_day) %>%
+hchart('area', hcaes(x = 'block_day', y = 'n'))
+hc <- highchart(type = "stock") %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series(activeHash$hashrate, id = "usdjpy")
+hc <- highchart(type = "stock") %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series(activeHash$hashrate, id = "usdjpy")
+hc
+hc <- highchart(type = "stock") %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series(activeHash$hashrate, id = "Hashrate")%>%
+hc_add_series(activeHash$address_count, id = "Addresses")
+hc
+activeHash$hashrate <- 1000000000 * activeHash$hashrate
+hc <- highchart(type = "stock") %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series(activeHash$hashrate, id = "Hashrate")%>%
+hc_add_series(activeHash$address_count, id = "Addresses")
+hc
+activeHash$hashrate <-  activeHash$hashrate / 1000000000
+hc <- highchart(type = "stock") %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series(activeHash$hashrate, id = "Hashrate")%>%
+hc_add_series(activeHash$address_count, id = "Addresses")
+hc
+activeHash$hashrate <-  activeHash$hashrate * 1000000000
+runApp('D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard')
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate, group = variable)) %>%
+hc_add_theme()
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate, group = variable)) %>%
+hc_add_theme()
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate)) %>%
+hc_add_theme()
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate))
+output$hashRate <- renderHighchart ({
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate)) %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+})
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate)) %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+})
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate)) %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package")
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate, address_count)) %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package")
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate)) %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series(activeHash$address_count)
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate)) %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+})
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate)) %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package")
+require("dplyr")
+library("viridisLite")
+df = data_frame(x = c(1:7),y = c(100,105,110,120,80,90,98),name = c("A","A","A","A","B","B","B"))
+highchart() %>%
+hc_add_series_df(data = df, type = "line") %>%
+hc_xAxis(categories = 1:7, type = 'datetime',
+labels = list(format = '{value:%b %d}'))
+View(df)
+highchart() %>%
+hc_add_series_df(data = activeHash, type = "line") %>%
+hc_xAxis(categories = block_day, type = 'datetime',
+labels = list(format = '{value:%b %d}'))
+highchart() %>%
+hc_add_series_df(data = activeHash$hashrate, type = "line") %>%
+hc_xAxis(categories = block_day, type = 'datetime',
+labels = list(format = '{value:%b %d}'))
+highchart() %>%
+hc_add_series_df(data = activeHash$hashrate, type = "line") %>%
+hc_xAxis(categories = block_day, type = 'datetime',
+labels = list(format = '{value:%b %d}'))
+highchart() %>%
+hc_add_series_df(data = activeHash, type = "line") %>%
+hc_xAxis(categories = block_day, type = 'datetime',
+labels = list(format = '{value:%b %d}'))
+highchart() %>%
+hc_add_series_df(data = activeHash, type = "line") %>%
+hc_xAxis(categories = activeHash$block_day, type = 'datetime',
+labels = list(format = '{value:%b %d}'))
+hchart(activeHash, "line", hcaes(x = block_day, y = hashrate)) %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package")
+series = list(
+list(
+name = 'Hashrate',
+color = 'blue',
+data = activeHash$hashrate
+),
+list(
+name = 'Active Accounts',
+color = 'green',
+data = activeHash$address_count
+)
+)
+highchart() %>%
+hc_add_series_list(series)
+series = list(
+list(
+name = 'Hashrate',
+color = 'blue',
+data = activeHash$hashrate /1000000000
+),
+list(
+name = 'Active Accounts',
+color = 'green',
+data = activeHash$address_count
+)
+)
+highchart() %>%
+hc_add_series_list(series)
+series = list(
+list(
+name = 'Hashrate',
+color = 'blue',
+data = activeHash$hashrate
+),
+list(
+name = 'Active Accounts',
+color = 'green',
+data = activeHash$address_count
+)
+)
+highchart() %>%
+hc_add_series_list(series)
+highchart() %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series_list(series)
+series = list(
+list(
+name = 'Hashrate',
+color = 'cyan',
+data = activeHash$hashrate
+),
+list(
+name = 'Active Accounts',
+color = 'green',
+data = activeHash$address_count
+)
+)
+highchart() %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series_list(series)
+series = list(
+list(
+name = 'Hashrate',
+color = 'red',
+data = activeHash$hashrate
+),
+list(
+name = 'Active Accounts',
+color = 'green',
+data = activeHash$address_count
+)
+)
+highchart() %>%
+hc_title(text = "Charting some Symbols") %>%
+hc_subtitle(text = "Data extracted using quantmod package") %>%
+hc_add_series_list(series)
+runApp('D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard')
+highchart() %>%
+hc1 <- highchart() %>%
+hc_xAxis(categories = activeHash$block_day) %>%
+hc_title(text = "Active Accounts vs HashRate") %>%
+hc_subtitle(text = "Hashes in T/H") %>%
+hc_add_series(name = "HashRate", data = activeHash$hashrate) %>%
+hc_add_series(name = "Active Accounts", data = activeHash$address_count)
+highchart() %>%
+hc1 <- highchart() %>%
+hc_xAxis(categories = activeHash$block_day) %>%
+hc_title(text = "Active Accounts vs HashRate") %>%
+hc_subtitle(text = "Hashes in T/H") %>%
+hc_add_series(name = "HashRate", data = activeHash$hashrate) %>%
+hc_add_series(name = "Active Accounts", data = activeHash$address_count)
+highchart() %>%
+hc_xAxis(categories = activeHash$block_day) %>%
+hc_title(text = "Active Accounts vs HashRate") %>%
+hc_subtitle(text = "Hashes in T/H") %>%
+hc_add_series(name = "HashRate", data = activeHash$hashrate) %>%
+hc_add_series(name = "Active Accounts", data = activeHash$address_count)
+runApp('D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard')
+View(miners_gini)
+highchart() %>%
+hc_xAxis(categories = miners_gini$date) %>%
+hc_title(text = "Miner Gini Coefficient") %>%
+hc_subtitle(text = "Hashes in T/H") %>%
+hc_add_series(name = "Gini Coefficient", data = miners_gini$gini) %>%
+hc_add_series(name = "Gini 30", data = miners_gini$gini_sma30) %>%
+hc_add_series(name = "Gini 7", data = miners_gini$gini_sma7)
+runApp('D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard')
+runApp('D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard')
+runApp('D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard')
+runApp('D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard')
+miners_rich <- query_exec(query_rich, projectid, use_legacy_sql = FALSE)
+query_rich = "with double_entry_book as (
+-- debits
+select to_address as address, value as value
+from `bigquery-public-data.crypto_ethereum.traces`
+where to_address is not null
+and status = 1
+and (call_type not in ('delegatecall', 'callcode', 'staticcall') or call_type is null)
+union all
+-- credits
+select from_address as address, -value as value
+from `bigquery-public-data.crypto_ethereum.traces`
+where from_address is not null
+and status = 1
+and (call_type not in ('delegatecall', 'callcode', 'staticcall') or call_type is null)
+union all
+-- transaction fees debits
+select miner as address, sum(cast(receipt_gas_used as numeric) * cast(gas_price as numeric)) as value
+from `bigquery-public-data.crypto_ethereum.transactions` as transactions
+join `bigquery-public-data.crypto_ethereum.blocks` as blocks on blocks.number = transactions.block_number
+group by blocks.miner
+union all
+-- transaction fees credits
+select from_address as address, -(cast(receipt_gas_used as numeric) * cast(gas_price as numeric)) as value
+from `bigquery-public-data.crypto_ethereum.transactions`
+)
+select address,
+sum(value) / 1000000000 as balance
+from double_entry_book
+group by address
+order by balance desc
+limit 20"
+miners_rich <- query_exec(query_rich, projectid, use_legacy_sql = FALSE)
+miner_rich = read.csv("export_dataframe.csv")
+setwd("D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard")
+miner_rich = read.csv("export_dataframe.csv")
+View(miner_rich)
+highchart() %>%
+hc_add_series_labels_values(miner_rich$address, miner_rich$balance, name = "Pie",colorByPoint = TRUE, type = "pie")
+highchart() %>%
+hc_add_series_labels_values(miner_rich$address, miner_rich$balance, name = "Pie",colorByPoint = TRUE, type = "pie")  %>% hc_theme_monokai()
+highchart() %>%
+hc_add_series_labels_values(miner_rich$address, miner_rich$balance, name = "Pie",colorByPoint = TRUE, type = "pie")  %>% hc_add_theme(hc_theme_monokai())
+highchart() %>%
+hc_xAxis(categories = miners_gini$date) %>%
+hc_title(text = "Miner Gini Coefficient") %>%
+hc_subtitle(text = "Hashes in T/H") %>%
+hc_add_series(name = "Gini Coefficient", data = miners_gini$gini) %>%
+hc_add_series(name = "Gini 30", data = miners_gini$gini_sma30) %>%
+hc_add_series(name = "Gini 7", data = miners_gini$gini_sma7) %>% hc_add_theme(hc_theme_monokai())
+highchart() %>%
+hc_xAxis(categories = activeHash$block_day) %>%
+hc_title(text = "Active Accounts vs HashRate") %>%
+hc_subtitle(text = "Hashes in T/H") %>%
+hc_add_series(name = "HashRate", data = activeHash$hashrate) %>%
+hc_add_series(name = "Active Accounts", data = activeHash$address_count) %>% hc_add_theme(hc_theme_monokai())
+runApp()
+miner_rich <- head(miner_rich,10)
+miner_rich <- head(miner_rich,10)
+highchart() %>%
+hc_xAxis(categories = miners_gini$date) %>%
+hc_title(text = "Miner Gini Coefficient") %>%
+hc_subtitle(text = "Hashes in T/H") %>%
+hc_add_series(name = "Gini Coefficient", data = miners_gini$gini) %>%
+hc_add_series(name = "Gini 30", data = miners_gini$gini_sma30) %>%
+hc_add_series(name = "Gini 7", data = miners_gini$gini_sma7) %>% hc_add_theme(hc_theme_monokai())
+highchart() %>%
+hc_add_series_labels_values(miner_rich$address, miner_rich$balance, name = "Pie",colorByPoint = TRUE, type = "pie")  %>% hc_add_theme(hc_theme_monokai())
+runApp()
+runApp()
+transactions <- query_exec(query_transact, projectid, use_legacy_sql = FALSE)
+transactions <- query_exec(query_transact, projectid, use_legacy_sql = FALSE)
+query_transact = "with daily_transactions as (
+select date(block_timestamp) as date, count(*) as count
+from `bigquery-public-data.crypto_bitcoin.transactions`
+group by date
+)
+select date_trunc(date, WEEK) as week, cast(avg(count) as INT64) as count
+from daily_transactions
+group by week
+order by week"
+transactions <- query_exec(query_transact, projectid, use_legacy_sql = FALSE)
+View(transactions)
+runApp()
+hchart(density(transactions$week), type = "area", color = "#B71C1C", name = "Price") %>% hc_add_theme(hc_theme_elementary())
+hchart(density(transactions$week), type = "area", color = "#B71C1C", name = "Price") %>% hc_add_theme(hc_theme_elementary())
+hchart(density(transactions$count), type = "area", color = "#B71C1C", name = "Price") %>% hc_add_theme(hc_theme_elementary())
+hchart(density(transactions$count), type = "area", name = "Transactions") %>% hc_add_theme(hc_theme_darkunica())
+runApp()
+query_values = "select date_trunc(date(block_timestamp), MONTH) as month, cast(max(value / 1000000000000000000) as INT64) as MaxVal, cast(avg(value / 1000000000000000000) as INT64) as AvgVal
+from `bigquery-public-data.crypto_ethereum_classic.transactions`
+group by month
+order by month"
+query_values = "select date_trunc(date(block_timestamp), MONTH) as month, cast(max(value / 1000000000000000000) as INT64) as MaxVal, cast(avg(value / 1000000000000000000) as INT64) as AvgVal
+from `bigquery-public-data.crypto_ethereum_classic.transactions`
+group by month
+order by month"
+#transactions <- query_exec(query_transact, projectid, use_legacy_sql = FALSE)
+transaction_values <- query_exec(query_values, projectid, use_legacy_sql = FALSE)
+melt_csv(transaction_values)
+melt(transaction_values)
+library(tidyverse)
+library(tidyr)
+library(reshape2)
+melt(transaction_values)
+x = melt(transaction_values)
+View(x)
+View(transaction_values)
+melt(transaction_values, id=c("month"))
+x = melt(transaction_values, id=c("month"))
+View(x)
+hchart(transaction_values, "bar", hcaes(x = month, y = MaxVal))  %>% hc_add_theme(hc_theme_gridlight())
+hchart(transaction_values, "bar", hcaes(x = month, y = MaxVal))  %>% hc_add_theme(hc_theme_darkunica())
+hchart(transaction_values, "bar", hcaes(x = month, y = MaxVal))  %>% hc_add_theme(hc_theme_darkunica())
+runApp()
+difficultad_media = read.csv("export-BlockDifficulty.csv")
+difficultad_media = read.csv("export-BlockDifficulty.csv")
+runApp()
+View(difficultad_media)
+runApp()
+colnames(difficultad_media) <- c("Date","unixTS","Value")
+difficultad_media = read.csv("export-BlockDifficulty.csv")
+colnames(difficultad_media) <- c("Date","unixTS","Value")
+highchart() %>%
+hc_xAxis(categories = difficultad_media$Date) %>%
+hc_title(text = "Difficultad") %>%
+hc_subtitle(text = "Ahorita le agregamos") %>%
+hc_add_series(name = "Median Difficulty", data = median(difficultad_media$Value)) %>%
+hc_add_series(name = "Difficultad", data = difficultad_media$Value) %>% hc_add_theme(hc_theme_darkunica())
+highchart() %>%
+hc_xAxis(categories = difficultad_media$Date) %>%
+hc_title(text = "Difficultad") %>%
+hc_subtitle(text = "Ahorita le agregamos") %>%
+hc_add_series(name = "Difficulty", data = difficultad_media$Value) %>%
+hc_add_series(name = "Average Difficulty", data = avg(difficultad_media$Value)) %>% hc_add_theme(hc_theme_darkunica())
+highchart() %>%
+hc_xAxis(categories = difficultad_media$Date) %>%
+hc_title(text = "Difficultad") %>%
+hc_subtitle(text = "Ahorita le agregamos") %>%
+hc_add_series(name = "Difficulty", data = difficultad_media$Value) %>%
+hc_add_series(name = "Average Difficulty", data = mean(difficultad_media$Value)) %>% hc_add_theme(hc_theme_darkunica())
+highchart() %>%
+hc_xAxis(categories = difficultad_media$Date) %>%
+hc_title(text = "Difficultad") %>%
+hc_subtitle(text = "Ahorita le agregamos") %>%
+hc_add_series(name = "Difficulty", data = difficultad_media$Value) %>% hc_add_theme(hc_theme_darkunica())
+View(difficultad_media)
+difficultadMedia %>%
+count(value) %>%
+hchart('areaspline', hcaes(x = 'Date', y = 'Value'))
+difficultad_media = read.csv("export-BlockDifficulty.csv")
+colnames(difficultad_media) <- c("Date","unixTS","Value")
+difficultad_media$unixTS <- median(difficultad_media$Value)
+difficultad_media %>%
+count(value) %>%
+hchart('areaspline', hcaes(x = 'Date', y = 'Value'))
+a
+difficultad_media %>%
+count(unixTS) %>%
+hchart('areaspline', hcaes(x = 'Date', y = 'Value'))
+difficultad_media %>%
+count(unixTS) %>%
+hchart('areaspline', hcaes(x = Date, y = Value))
+highchart() %>%
+hc_xAxis(categories = difficultad_media$Date) %>%
+hc_title(text = "Difficultad") %>%
+hc_subtitle(text = "Ahorita le agregamos") %>%
+hc_add_series(name = "Difficulty", data = difficultad_media$Value) %>%
+hc_add_series(name = "Median Difficulty", data = difficultad_media$unixTS) %>% hc_add_theme(hc_theme_darkunica())
+difficultad_media$unixTS <- median(difficultad_media$Value)
+difficultad_media$valProm <- mean(difficultad_media$Value)
+highchart() %>%
+hc_xAxis(categories = difficultad_media$Date) %>%
+hc_title(text = "Difficultad") %>%
+hc_subtitle(text = "Ahorita le agregamos") %>%
+hc_add_series(name = "Difficulty", data = difficultad_media$Value) %>%
+hc_add_series(name = "Mean Difficulty", data = difficultad_media$valProm) %>%
+hc_add_series(name = "Median Difficulty", data = difficultad_media$unixTS) %>% hc_add_theme(hc_theme_darkunica())
+runApp()
+library(flexdashboard)
+install.packages("flexdashboard")
+library(flexdashboard)
+runApp()
+library(flexdashboard)
+runApp()
+detach("package:flexdashboard", unload = TRUE)
+save.image("D:/Documentos/Cuarto Anio/Segundo Semestre/Freedom/BlockChain/EthereumDashboard/shinyDashboard/allQueries.RData")

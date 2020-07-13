@@ -6,7 +6,9 @@ In this proyecto we utilized the R, Shiny, BigQuery and Kaggle in order to creat
 
 For the Installation you must fulfill the requirements by R in order to view the application in local. The actual app is a Shiny App. In order to run the project you must import the RData if you wish to see it local or update the credentials to you BigQuery API in order to grab the data through there. 
 
-For the actual run you should just press play in the Shiny App once you have the server and ui imported into your environment. No other run necessary.
+You can also load the RData file named **AllQueriesV2** to load existing data up to November 29 2019. 
+
+For the actual run you should just press play in the Shiny App once you have the server, ui and data imported into your environment. No other run necessary.
 
 ## Usage
 

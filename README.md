@@ -30,6 +30,4 @@ We thank all the people that help us get here. Below you can find some resources
 * https://bigquery.cloud.google.com/table/bigquery-public-data:crypto_ethereum.tokens
 * https://gwei.io/
 
-## Images 
-
 
